@@ -1,0 +1,421 @@
+import numpy as np
+import random
+import pickle
+import os
+from collections import defaultdict
+
+class TicTacToe:
+    def __init__(self):
+        self.board = np.array([' '] * 9)
+        self.current_player = 'X'
+        self.history = []
+
+    def reset(self):
+        self.board = np.array([' '] * 9)
+        self.current_player = 'X'
+        self.history = []
+
+    def print_board(self):
+        print("\n  " + "   |   |   ")
+        print(f"  {self.board[0]} | {self.board[1]} | {self.board[2]} ")
+        print("  " + "---|---|---")
+        print(f"  {self.board[3]} | {self.board[4]} | {self.board[5]} ")
+        print("  " + "---|---|---")
+        print(f"  {self.board[6]} | {self.board[7]} | {self.board[8]} ")
+        print("  " + "   |   |   \n")
+
+    def available_moves(self):
+        return [i for i, spot in enumerate(self.board) if spot == ' ']
+
+    def make_move(self, position):
+        if self.board[position] == ' ':
+            self.board[position] = self.current_player
+            self.history.append(position)
+            self.switch_player()
+            return True
+        return False
+
+    def switch_player(self):
+        self.current_player = 'O' if self.current_player == 'X' else 'X'
+
+    def check_winner(self):
+        win_patterns = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],  # Linhas
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],  # Colunas
+            [0, 4, 8], [2, 4, 6]               # Diagonais
+        ]
+        
+        for pattern in win_patterns:
+            if (self.board[pattern[0]] != ' ' and
+                self.board[pattern[0]] == self.board[pattern[1]] == self.board[pattern[2]]):
+                return self.board[pattern[0]]
+        
+        if ' ' not in self.board:
+            return 'Tie'
+        
+        return None
+
+    def is_game_over(self):
+        return self.check_winner() is not None
+
+    def get_state(self):
+        return ''.join(self.board)
+
+class MinimaxPlayer:
+    def __init__(self, player_char, difficulty='hard'):
+        self.player_char = player_char
+        self.opponent_char = 'O' if player_char == 'X' else 'X'
+        self.difficulty = difficulty
+    
+    def get_move(self, game):
+        available_moves = game.available_moves()
+        
+        if not available_moves:
+            return None
+        
+        # Aplica a dificuldade
+        if self.difficulty == 'easy':
+            if random.random() < 0.75:
+                return random.choice(available_moves)
+        elif self.difficulty == 'medium':
+            if random.random() < 0.5:
+                return random.choice(available_moves)
+        elif self.difficulty == 'hard':
+            if len(available_moves) == 9:  # Primeira jogada
+                return random.choice(available_moves)
+        
+        # Usa Minimax para a jogada
+        best_score = -float('inf')
+        best_move = None
+        
+        for move in available_moves:
+            game.board[move] = self.player_char
+            score = self.minimax(game, False)
+            game.board[move] = ' '
+            
+            if score > best_score:
+                best_score = score
+                best_move = move
+        
+        return best_move
+
+    def minimax(self, game, is_maximizing):
+        winner = game.check_winner()
+        
+        if winner == self.player_char:
+            return 10
+        elif winner == self.opponent_char:
+            return -10
+        elif winner == 'Tie':
+            return 0
+        
+        if is_maximizing:
+            best_score = -float('inf')
+            for move in game.available_moves():
+                game.board[move] = self.player_char
+                score = self.minimax(game, False)
+                game.board[move] = ' '
+                best_score = max(score, best_score)
+            return best_score
+        else:
+            best_score = float('inf')
+            for move in game.available_moves():
+                game.board[move] = self.opponent_char
+                score = self.minimax(game, True)
+                game.board[move] = ' '
+                best_score = min(score, best_score)
+            return best_score
+
+class NeuralNetwork:
+    def __init__(self, input_size=9, hidden_size=18, output_size=9):
+        self.weights = {
+            'hidden': np.random.randn(input_size, hidden_size),
+            'output': np.random.randn(hidden_size, output_size)
+        }
+    
+    def forward(self, X):
+        # Converte estado do tabuleiro para vetor numérico
+        X = np.array([1 if c == 'X' else -1 if c == 'O' else 0 for c in X])
+        
+        # Camada oculta
+        self.hidden = np.tanh(np.dot(X, self.weights['hidden']))
+        
+        # Camada de saída
+        output = np.dot(self.hidden, self.weights['output'])
+        return output
+    
+    def get_chromosome(self):
+        return np.concatenate([
+            self.weights['hidden'].flatten(),
+            self.weights['output'].flatten()
+        ])
+    
+    def set_chromosome(self, chromosome):
+        # Calcula os tamanhos corretos para os pesos
+        hidden_size = self.weights['hidden'].size
+        output_size = self.weights['output'].size
+        total_size = hidden_size + output_size
+        
+        # Verifica compatibilidade de tamanho
+        if len(chromosome) != total_size:
+            raise ValueError(f"Tamanho do cromossomo ({len(chromosome)}) não corresponde ao esperado ({total_size})")
+        
+        # Atualiza os pesos
+        self.weights['hidden'] = chromosome[:hidden_size].reshape(self.weights['hidden'].shape)
+        self.weights['output'] = chromosome[hidden_size:hidden_size+output_size].reshape(self.weights['output'].shape)
+
+class GeneticPlayer:
+    def __init__(self, player_char, chromosome=None):
+        self.player_char = player_char
+        self.nn = NeuralNetwork()
+        if chromosome is not None:
+            self.nn.set_chromosome(chromosome)
+    
+    def get_move(self, game):
+        state = game.get_state()
+        output = self.nn.forward(state)
+        available_moves = game.available_moves()
+        
+        # Filtra apenas movimentos válidos
+        valid_output = [-float('inf')] * 9
+        for move in available_moves:
+            valid_output[move] = output[move]
+        
+        return np.argmax(valid_output)
+
+class GeneticAlgorithm:
+    def __init__(self, population_size=50, mutation_rate=0.1, elitism=0.2):
+        self.population_size = population_size
+        self.mutation_rate = mutation_rate
+        self.elitism = elitism
+    
+    def initialize_population(self):
+        # Tamanho do cromossomo baseado na rede neural
+        sample_nn = NeuralNetwork()
+        chromosome_length = len(sample_nn.get_chromosome())
+        return [np.random.uniform(-1, 1, chromosome_length) for _ in range(self.population_size)]
+    
+    def crossover(self, parent1, parent2):
+        # BLX-alpha crossover
+        alpha = 0.5
+        child = np.zeros_like(parent1)
+        for i in range(len(parent1)):
+            cmin = min(parent1[i], parent2[i]) - alpha * abs(parent1[i] - parent2[i])
+            cmax = max(parent1[i], parent2[i]) + alpha * abs(parent1[i] - parent2[i])
+            child[i] = np.random.uniform(cmin, cmax)
+        return child
+    
+    def mutate(self, chromosome):
+        for i in range(len(chromosome)):
+            if random.random() < self.mutation_rate:
+                chromosome[i] += np.random.normal(0, 0.2)
+        return chromosome
+    
+    def select_parents(self, fitness_scores):
+        # Seleção por torneio
+        tournament_size = 3
+        selected = []
+        for _ in range(2):
+            tournament = random.sample(range(len(fitness_scores)), tournament_size)
+            winner = tournament[0]
+            for idx in tournament[1:]:
+                if fitness_scores[idx] > fitness_scores[winner]:
+                    winner = idx
+            selected.append(winner)
+        return selected
+    
+    def fitness_function(self, chromosome, num_games_per_difficulty=10):
+        player = GeneticPlayer('O', chromosome)
+        game = TicTacToe()
+        total_wins = 0
+        total_ties = 0
+        total_losses = 0
+        
+        # Lista de dificuldades para testar
+        difficulties = ['easy', 'medium', 'hard']
+        
+        # Joga partidas contra cada dificuldade
+        for difficulty in difficulties:
+            for _ in range(num_games_per_difficulty):
+                game.reset()
+                opponent = MinimaxPlayer('X', difficulty=difficulty)
+                
+                while not game.is_game_over():
+                    if game.current_player == 'O':
+                        move = player.get_move(game)
+                    else:
+                        move = opponent.get_move(game)
+                    game.make_move(move)
+                
+                winner = game.check_winner()
+                if winner == 'O':
+                    total_wins += 1
+                elif winner == 'Tie':
+                    total_ties += 1
+                else:  # 'X' won
+                    total_losses += 1
+        
+        # Mantém o cálculo original de aptidão
+        return total_wins + total_ties * 0.5 - total_losses * 0.1
+    
+    def train(self, generations=50, save_file='genetic_player.pkl'):
+        # Determina o tamanho do cromossomo dinamicamente
+        chromosome_length = len(NeuralNetwork().get_chromosome())
+        population = self.initialize_population()
+        best_fitness = -float('inf')
+        best_chromosome = None
+        
+        for gen in range(generations):
+            fitness_scores = []
+            print(f"Geração {gen+1}/{generations}")
+            
+            # Avalia cada indivíduo
+            for i, chromosome in enumerate(population):
+                fitness = self.fitness_function(chromosome)
+                fitness_scores.append(fitness)
+                
+                if fitness > best_fitness:
+                    best_fitness = fitness
+                    best_chromosome = chromosome
+                    print(f"Novo melhor fitness: {best_fitness:.2f}")
+            
+            # Seleciona a próxima geração
+            new_population = []
+            
+            # Elitismo
+            elite_size = int(self.population_size * self.elitism)
+            elite_indices = np.argsort(fitness_scores)[-elite_size:]
+            for idx in elite_indices:
+                new_population.append(population[idx])
+            
+            # Preenche o restante com cruzamento
+            while len(new_population) < self.population_size:
+                parent_idx1, parent_idx2 = self.select_parents(fitness_scores)
+                child = self.crossover(population[parent_idx1], population[parent_idx2])
+                child = self.mutate(child)
+                new_population.append(child)
+            
+            population = new_population
+        
+        # Salva o melhor jogador
+        if best_chromosome is not None:
+            with open(save_file, 'wb') as f:
+                pickle.dump(best_chromosome, f)
+            print(f"Melhor cromossomo salvo em {save_file}")
+        
+        return best_chromosome
+
+def load_genetic_player(file_path='genetic_player.pkl'):
+    if os.path.exists(file_path):
+        with open(file_path, 'rb') as f:
+            return pickle.load(f)
+    return None
+
+def main():
+    genetic_file = 'genetic_player.pkl'
+    genetic_player = None
+    
+    # Menu principal
+    while True:
+        print("\n" + "=" * 50)
+        print(" JOGO DA VELHA - MINIMAX vs ALGORITMO GENÉTICO")
+        print("=" * 50)
+        print("1. Jogar contra Minimax")
+        print("2. Jogar contra Algoritmo Genético")
+        print("3. Treinar Algoritmo Genético")
+        print("4. Sair")
+        
+        choice = input("\nEscolha: ")
+        
+        if choice == '4':
+            break
+            
+        if choice == '3':
+            print("\n" + "=" * 50)
+            print(" TREINAMENTO DO ALGORITMO GENÉTICO")
+            print("=" * 50)
+            pop_size = int(input("Tamanho da população (padrão 50): ") or 50)
+            generations = int(input("Número de gerações (padrão 50): ") or 50)
+            
+            ga = GeneticAlgorithm(population_size=pop_size)
+            ga.train(generations=generations, save_file=genetic_file)
+            genetic_player = load_genetic_player(genetic_file)
+            continue
+            
+        if choice in ['1', '2']:
+            print("\n" + "=" * 50)
+            print(" ESCOLHA A DIFICULDADE")
+            print("=" * 50)
+            print("1. Fácil")
+            print("2. Médio")
+            print("3. Difícil")
+            level = input("\nEscolha: ")
+            
+            if level == '1':
+                difficulty = 'easy'
+            elif level == '2':
+                difficulty = 'medium'
+            else:
+                difficulty = 'hard'
+            
+            game = TicTacToe()
+            human_char = 'X'
+            
+            if choice == '1':
+                ai_player = MinimaxPlayer('O', difficulty)
+                ai_name = "MINIMAX"
+            else:
+                if genetic_player is None:
+                    genetic_player = load_genetic_player(genetic_file)
+                if genetic_player is None:
+                    print("\nNenhum jogador genético treinado encontrado. Treine primeiro!")
+                    continue
+                ai_player = GeneticPlayer('O', genetic_player)
+                ai_name = "ALGORITMO GENÉTICO"
+            
+            print(f"\nVocê: X | {ai_name}: O")
+            print(f"Dificuldade: {difficulty.capitalize()}")
+            
+            # Sorteia quem começa
+            starter = random.choice([human_char, 'O'])
+            game.current_player = starter
+            
+            if starter == 'O':
+                print(f"\n{ai_name} começa!")
+            else:
+                print("\nVocê começa!")
+            
+            # Loop do jogo
+            while not game.is_game_over():
+                game.print_board()
+                
+                if game.current_player == human_char:
+                    while True:
+                        try:
+                            move = int(input("Sua jogada (0-8): "))
+                            if move in game.available_moves():
+                                game.make_move(move)
+                                break
+                            else:
+                                print("Jogada inválida! Tente novamente.")
+                        except ValueError:
+                            print("Entrada inválida! Digite um número entre 0 e 8.")
+                else:
+                    print(f"{ai_name} está pensando...")
+                    move = ai_player.get_move(game)
+                    game.make_move(move)
+                    print(f"{ai_name} jogou na posição {move}")
+            
+            # Resultado final
+            game.print_board()
+            winner = game.check_winner()
+            
+            if winner == human_char:
+                print("Parabéns! Você venceu!")
+            elif winner == 'O':
+                print(f"{ai_name} venceu!")
+            else:
+                print("Empate!")
+
+if __name__ == "__main__":
+    main()
