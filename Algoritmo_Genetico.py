@@ -8,7 +8,7 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
 POPULACAO = 10
-PARTIDAS = 3
+PARTIDAS = 10
 GERACOES = 10
 
 def gerar_cromossomo(size):
@@ -38,11 +38,13 @@ def avaliacao(cromossomo, modelo, adversario):
             show=False
         )
         if resultado == 'X':
-            pontuacao += 3
+            pontuacao += 16 
         elif resultado == 'O':
-            pontuacao += 1
+            pontuacao -= 15 
         elif "invalida" in resultado:
-            pontuacao -= 5
+            pontuacao -= 20 
+        elif resultado == 'Empate':
+            pontuacao += 15
     return pontuacao
 
 def avaliacao_individual(args):
@@ -58,11 +60,13 @@ def avaliacao_individual(args):
             show=False
         )
         if resultado == 'X':
-            pontuacao += 3
+            pontuacao += 20
         elif resultado == 'O':
-            pontuacao += 1
+            pontuacao -= 15
         elif "invalida" in resultado:
-            pontuacao -= 5
+            pontuacao -= 20
+        elif resultado == 'Empate': 
+            pontuacao += 15
 
     return pontuacao
 
@@ -136,9 +140,9 @@ def evoluir(populacao, fitnesses, n_elite=2, taxa_mutacao=0.01):
     return nova_populacao[:len(populacao)]
 
 FASES = [
-    (minimax_facil, 5),    # 5 gerações contra fácil
-    (minimax_medio, 5),    # depois 5 contra médio
-    (minimax_dificil, 5),  # depois 5 contra difícil
+    (minimax_facil, 150),    # 5 gerações contra fácil
+    (minimax_medio, 250),    # depois 5 contra médio
+    (minimax_dificil, 100),  # depois 5 contra difícil
 ]
 base = MLP()
 
